@@ -1,10 +1,6 @@
-#define A        8                     // the pin connected to the wire A 
-#define A_bar    9                     // the pin connected to the wire A
-#define B        10                    // the pin connected to the wire B
-#define B_bar    11                     // the pin connected to the wire B
-#define x        5000                  // smaller values may make the motor produce more speed and less torque
+#define motor_neg        8                     // the pin connected to the wire A 
+#define motor_pos        9                     // the pin connected to the wire A
 
-#define mult 1
 #define P0 52
 #define P1 50
 #define P2 48
@@ -14,10 +10,11 @@
 #define P6 40
 #define P7 38
 
-//int SEL2 = 12;
 #define SEL1 14
 #define OE 13
 #define HOME 2
+
+#define pwm_out_pin_ENB 10
 
 byte result_high;
 byte result_low;
@@ -29,22 +26,26 @@ byte byte_data;
 byte buffer_low;
 byte buffer_high;
 
+//PID parameters
+double Kp = 800;
+double Ki = 0;
+double Kd = 0.48;
+
+double output;
+double actual_pwm; 
 double count;
 
-///desired serial entered value for position
-int incomingInt = 0; 
-int toMove;
-int toMoveSteps;
-int cwStepCount = 0;
-int ccwStepCount = 0;
-int moveFlag = 0;
+int target_count;
+int incomingInt;
+int lastIncomingInt;
+int diff;
 
-//****MOTOR CONTROLLER TO MOTOR PINS***////
-
-//white (motor pin 1)  - out3 (green wire) - phase A
-//blue  (motor pin 5) -  out4 (blue wire) - phase A -
-//purple (motor pin 4) - out1 (blue wire) - phase B
-//orange (motor pin 8) - out2 (green wire) -  phase B-
+float last_error=0;
+float error=0;
+float dError=0;
+float integral = 0;
+float derivative = 0;
+float iteration_time;
 
 
 void setup() {
@@ -66,44 +67,48 @@ void setup() {
 
   //motor pins
     //motor
-  pinMode(A, OUTPUT);
-  pinMode(A_bar, OUTPUT);
-  pinMode(B, OUTPUT);
-  pinMode(B_bar, OUTPUT);
-  
+  pinMode(motor_neg, OUTPUT);
+  pinMode(motor_pos, OUTPUT);
+
+
+  target_count = 90;
+
 }
 
 void loop() {
 
-
-  if (Serial.available() > 0) {
-    // read the incoming byte:
-    incomingInt = Serial.parseInt(); 
-  }
-
-  if (incomingInt != 0){
-    toMove = incomingInt;
-    moveFlag = 1;
-  }
-
-  //Serial.println(toMove);
-  if (moveFlag == 1){
-
-       if (toMove >0){
-       toMoveSteps = toMove/7;
-       go_cw(toMoveSteps);
-       }
-       else{
-       toMoveSteps = toMove/7;
-       go_ccw(toMoveSteps);
-       }
+  //Add serial input back in when done tuning before demo
+  /*if(Serial.available() > 0){
+    incomingInt= Serial.parseInt();
   }
   
+  if (incomingInt != 0){
+    target_count = incomingInt;
+  }
+*/
+  
+  pid();
+
+  if(output < 0.0){
+     digitalWrite(motor_neg, LOW);
+     digitalWrite(motor_pos, HIGH);
+  }
+  else{   
+     digitalWrite(motor_neg, HIGH);
+     digitalWrite(motor_pos, LOW);
+  }
+
+
+  output = constrain(output, -255, 255);
+
+  actual_pwm=abs(output); 
+
+  analogWrite(pwm_out_pin_ENB, actual_pwm);
+
   // put your main code here, to run repeatedly:
   //Input to decoder chip to select upper byte 
   digitalWrite(OE, LOW);
   digitalWrite(SEL1, LOW);
-  //digitalWrite(SEL2, LOW);
   get_high();
 
   //Input to chip to select lower byte
@@ -115,12 +120,31 @@ void loop() {
 
   //data_manipulations
   count = (result_high<<8) | result_low;
-  count = double(count);
-  //Serial.println((PINB & B00000010), BIN);
-  Serial.println(count);
+  count = double(count)/5.275;
+
+  Serial.println(output); 
+ 
 
 }
 
+void pid(){
+  
+  unsigned long  currentMicros = micros();
+
+  error = target_count - count;
+  
+  dError= error - last_error;
+
+  integral += error * iteration_time*0.000001;
+
+  derivative = dError / (iteration_time*0.000001);
+
+  output = (Kp*error)+(Kd*derivative) + (Ki*integral);
+
+  iteration_time = micros() - currentMicros;
+
+  last_error = error ; 
+}
 
 
 //function for getting 2nd LSB
@@ -162,97 +186,6 @@ byte get_data() {
   ((PING & B00000010)  << 5)|                 //40, PG1, 6
   ((PIND & B10000000)      )                  //38, PD7, 7
   );
-//  bitWrite(byte_data, 0, digitalRead(52));
-//  bitWrite(byte_data, 1, digitalRead(50));
-//  bitWrite(byte_data, 2, digitalRead(48));
-//  bitWrite(byte_data, 3, digitalRead(46));
-//  bitWrite(byte_data, 4, digitalRead(44));
-//  bitWrite(byte_data, 5, digitalRead(42));
-//  bitWrite(byte_data, 6, digitalRead(40));
-//  bitWrite(byte_data, 7, digitalRead(38));   
+
   return byte_data;  
-}
-
-
-
-//motor functions
-
-void go_cw(int numSteps){
-   
-     if(cwStepCount != numSteps){
-      
-          digitalWrite(A, HIGH);
-          digitalWrite(A_bar, LOW);
-          digitalWrite(B, LOW); 
-          digitalWrite(B_bar, HIGH);
-          delayMicroseconds (x);
-        
-          digitalWrite(A, LOW);
-          digitalWrite(A_bar, HIGH);
-          digitalWrite(B, LOW);
-          digitalWrite(B_bar, HIGH);
-          delayMicroseconds (x);
-        
-          digitalWrite(A, LOW);
-          digitalWrite(A_bar, HIGH);
-          digitalWrite(B, HIGH);
-          digitalWrite(B_bar, LOW);
-          delayMicroseconds (x);
-        
-          digitalWrite(A, HIGH);
-          digitalWrite(A_bar, LOW);
-          digitalWrite(B, HIGH);
-          digitalWrite(B_bar, LOW);
-          delayMicroseconds (x);
-
-          cwStepCount++;
-     }
-     else{
-         cwStepCount = 0;
-         moveFlag = 0;
-     }
-}
-
-
-void go_ccw(int numSteps){
-   
-     if(ccwStepCount != numSteps){
-
-        digitalWrite(A, HIGH);
-        digitalWrite(A_bar, LOW);
-        digitalWrite(B, LOW); 
-        digitalWrite(B_bar, HIGH);
-        delayMicroseconds (x);
-          
-        digitalWrite(A, HIGH);
-        digitalWrite(A_bar, LOW);
-        digitalWrite(B, HIGH);
-        digitalWrite(B_bar, LOW);
-        delayMicroseconds (x);
-  
-        digitalWrite(A, LOW);
-        digitalWrite(A_bar, HIGH);
-        digitalWrite(B, HIGH);
-        digitalWrite(B_bar, LOW);
-        delayMicroseconds (x);
-  
-        digitalWrite(A, LOW);
-        digitalWrite(A_bar, HIGH);
-        digitalWrite(B, LOW);
-        digitalWrite(B_bar, HIGH);
-        delayMicroseconds (x);
-  
-        digitalWrite(A, HIGH);
-        digitalWrite(A_bar, LOW);
-        digitalWrite(B, LOW); 
-        digitalWrite(B_bar, HIGH);
-        delayMicroseconds (x);
-        
-       
-          ccwStepCount--;
-     }
-     else{
-         ccwStepCount = 0;
-         moveFlag = 0;
-     }
 }
