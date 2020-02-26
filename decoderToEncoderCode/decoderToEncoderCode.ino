@@ -27,9 +27,9 @@ byte buffer_low;
 byte buffer_high;
 
 //PID parameters
-double Kp = 800;
-double Ki = 0;
-double Kd = 0.48;
+double Kp = 160;
+double Ki = 5;
+double Kd = 0.5;
 
 double output;
 double actual_pwm; 
@@ -71,7 +71,7 @@ void setup() {
   pinMode(motor_pos, OUTPUT);
 
 
-  target_count = 90;
+  target_count = -90;
 
 }
 
